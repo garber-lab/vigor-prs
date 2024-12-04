@@ -1,0 +1,41 @@
+# History files
+.Rhistory
+.Rapp.history
+
+# Session Data files
+.RData
+
+# User-specific files
+.Ruserdata
+
+# RStudio files
+.Rproj.user/
+*.Rproj
+
+# Temporary files created during R CMD build
+.Rbuildignore
+
+# Output files
+*.tar.gz
+*.Rcheck/
+
+# Packrat files
+packrat/
+packrat/lib*
+packrat/src/
+
+# Cache files
+.Rcache/
+
+# Compiled files
+*.o
+*.so
+*.dll
+
+# Python virtual environments
+venv/
+__pycache__/
+
+# Operating system files
+.DS_Store
+Thumbs.db
