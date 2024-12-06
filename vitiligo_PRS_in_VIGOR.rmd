@@ -17,8 +17,6 @@ library(data.table)
 
 #install.packages('rsnps', repos = c('https://ropensci.r-universe.dev', 'https://cloud.r-project.org'))
 library(rsnps)
-
-#install.packages('LDlinkR')
 library(LDlinkR)
 ```
 
@@ -29,27 +27,59 @@ weights <- fread(weights_path)
 snps <- weights$SNP
 
 bim_path <- "/pi/manuel.garber-umw/human/VIGOR/tj/ibd/all_samples_qc.bim"
-bim <- fread(bim_path) %>%
-  mutate(chr_pos=str_c(V1, ":", V4))
-```
-
-```{r}
-#get a list of the rsIDs not in the bim
-bim_missing_snps <- setdiff(snps, bim$V2)
-missing_snp_query <- ncbi_snp_query(bim_missing_snps) %>%
-  mutate(chr_pos=str_c(chromosome, ":", bp))
-missing_snp_query
-```
-
-```{r}
-#left join with the bim file to see if we can rescue any of these
-rescue_snps <- left_join(missing_snp_query, bim, on="chr_pos") %>%
-  filter(!is.na(V1))
-rescue_snps
+bim <- fread(bim_path)
 ```
 
 
 ```{r}
+update_weights_with_rescued_snps <- function(weights, bim) {
+  
+  # Step 1: Identify SNPs in the weights table that are missing in the .bim table
+  snps <- weights$SNP
+  bim_missing_snps <- setdiff(snps, bim$V2)
+  
+  cat("Identified", length(bim_missing_snps), "weight SNPs not present in the .bim file. Attempting to identify synonyms...\n")
+  
+  # Step 2: Query missing SNPs to find chromosome_position and see if there is a synonym rsID at that position in the bim file
+  missing_snp_query <- ncbi_snp_query(bim_missing_snps) %>%
+    mutate(chr_pos = str_c(chromosome, ":", bp))
+
+  cat("SNP query completed. Retrieved information for", nrow(missing_snp_query), "SNPs.\n")
+
+  # Step 3: Attempt to rescue SNPs by joining with the .bim file
+  bim <- bim %>% mutate(chr_pos=str_c(V1, ":", V4))
+  
+  rescue_snps <- left_join(missing_snp_query, bim, by = "chr_pos") %>%
+    filter(!is.na(V1)) %>%
+    transmute(
+      SNP = query,
+      rescue_snp = V2
+    )
+
+  cat("Successfully identified", nrow(rescue_snps), "SNP synonyms, which are now updated in the weights file.\n")
+  
+  # Step 4: Merge rescue SNPs back with weights and update columns
+  updated_weights <- weights %>%
+    left_join(rescue_snps, by = "SNP") %>%
+    mutate(
+      synonym_SNP = if_else(!is.na(rescue_snp), str_c(synonym_SNP, SNP, sep=","), synonym_SNP),
+      SNP = if_else(!is.na(rescue_snp), rescue_snp, SNP)
+    ) %>%
+    select(-rescue_snp)
+
+  return(updated_weights)
+}
+
+updated_weights <- update_weights_with_rescued_snps(weights, bim)
+updated_weights
+```
+
+
+
+```{r}
+
+bim_missing_snps <- setdiff(updated_weights$SNP, bim$V2)
+
 get_best_proxy_snps <- function(query_snps, token = "342bb55e0297", bim) {
   # Ensure query_snp is a list if it's not
   if (length(query_snps) == 1) {
@@ -90,51 +120,6 @@ best_proxies <- get_best_proxy_snps(query_snps=bim_missing_snps,
 best_proxies
 ```
 
-
-
-```{r}
-updated_table <- weights %>%
-  left_join(best_proxies, by = c("SNP")) %>%
-  mutate(
-    effect_allele = EA_RiskAlleles,
-    tag_snp_effect_allele = case_when(
-      effect_allele == "A" ~ str_extract(Correlated_Alleles, "(?<=A=)[A-Za-z]+"),
-      effect_allele == "T" ~ str_extract(Correlated_Alleles, "(?<=T=)[A-Za-z]+"),
-      effect_allele == "G" ~ str_extract(Correlated_Alleles, "(?<=G=)[A-Za-z]+"),
-      effect_allele == "C" ~ str_extract(Correlated_Alleles, "(?<=C=)[A-Za-z]+"),
-      effect_allele == "D" ~ str_extract(Correlated_Alleles, "(?<=-=)[A-Za-z]+"),
-      effect_allele == "I" ~ str_extract(Correlated_Alleles, "(?<=([A-Za-z])=)[A-Za-z]+"),
-      TRUE ~ NA_character_
-    ),
-    other_proxy_allele = case_when(
-      tag_snp_effect_allele %in% c("I", "D") ~ ifelse(
-        tag_snp_effect_allele == "I", "D", "I"
-      ),
-      !is.na(effect_allele) & !is.na(Alleles) ~ 
-        Alleles %>%
-        str_remove_all("\\(|\\)|/") %>% # Remove parentheses and slash
-        str_remove(tag_snp_effect_allele), # Remove the effect allele
-      TRUE ~ NA_character_
-    ),
-    # Create proxy_snp summary column with annotations
-    proxy_snp_summary = if_else(!is.na(proxy_SNP), paste(
-      "Index_SNP:", SNP,
-      "Proxy_SNP:", proxy_SNP,
-      "R2:", R2,
-      "Dprime:", Dprime,
-      "MAF:", MAF,
-      "Correlated_Alleles:", Correlated_Alleles
-    ), NA_character_)
-  ) %>%
-  # Conditionally update SNP only if proxy_SNP is not NA
-  mutate(SNP = if_else(!is.na(proxy_SNP), proxy_SNP, SNP)) %>%
-  mutate(RA_OA = if_else(!is.na(proxy_SNP), str_c(tag_snp_effect_allele, "/", other_proxy_allele), RA_OA)) %>%
-  mutate(EA_RiskAlleles = if_else(!is.na(proxy_SNP), tag_snp_effect_allele, EA_RiskAlleles))%>%
-  # Select desired columns and drop redundant ones
-  select(-proxy_SNP, -R2, -Dprime, -MAF, -Correlated_Alleles, -tag_snp_effect_allele, -other_proxy_allele, -Alleles)
-
-updated_table
-```
 
 ```{r}
 process_proxy_data <- function(weights, best_proxies, effect_allele_col) {
