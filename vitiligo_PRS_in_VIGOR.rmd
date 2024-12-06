@@ -14,84 +14,69 @@ library(here, lib.loc="/home/genevieve.roberts-umw/R/x86_64-conda-linux-gnu-libr
 library(dbplyr, lib.loc = "/share/pkg/conda/r/4.2.2/lib/R/library")
 library(tidyverse, lib.loc = "/share/pkg/conda/r/4.2.2/lib/R/library")
 library(data.table)
-#library(BiocManager, lib.loc = "/share/pkg/conda/r/4.2.2/lib/R/library")
-#BiocManager::install("biomaRt", lib = "/home/genevieve.roberts-umw/R/x86_64-conda-linux-gnu-library/4.2")
-library(biomaRt, lib.loc="/home/genevieve.roberts-umw/R/x86_64-conda-linux-gnu-library/4.2")
 
-#so that biomaRt works
-httr::set_config(httr::config(ssl_verifypeer = FALSE))
+
+#install.packages('rsnps', repos = c('https://ropensci.r-universe.dev', 'https://cloud.r-project.org'))
+library(rsnps)
+
+#install.packages('LDlinkR')
+library(LDlinkR)
 ```
-
-
-```{r}
-listEnsembl(GRCh=38, mirror='uswest')
-```
-
-```{r}
-snp_mart <- useMart(biomart="ENSEMBL_MART_SNP", host="grch37.ensembl.org",
-                    path="/biomart/martservice", dataset="hsapiens_snp")
-```
-
-```{r}
-rescue_rsid <- function(db, chr_col = "CHR", start_col = "chr_start", end_col = "chr_end") {
-  # Validate input column names
-  if (!(chr_col %in% colnames(db)) || !(start_col %in% colnames(db)) || !(end_col %in% colnames(db))) {
-    stop("Specified column names do not exist in the input dataframe.")
-  }
-  
-  # Extract the values based on parameterized column names
-  temp <- getBM(
-    attributes = c('refsnp_id', 'allele', 'chrom_start'), 
-    filters = c('chr_name', 'start', 'end'), 
-    values = list(
-      db[[chr_col]], 
-      db[[start_col]], 
-      db[[end_col]]
-    ), 
-    mart = snp_mart
-  )
-  
-  return(temp)
-}
-```
-
-
-
-
----------------------------------
-
 
 
 ```{r}
 weights_path <- str_c(here(), "/Vitiligo_Risk_Score_Weights_Roberts2019.csv")
 weights <- fread(weights_path)
 snps <- weights$SNP
-```
 
-```{r}
-test=rescue_rsid(head(weights, 1), chr_col = "chr", start_col = "pos", end_col = "pos")
-test
-```
-
-
-```{r}
-test2=rescue_rsid_synonyms(head(weights, 1), rsid_col="SNP")
-test2
-```
-
-
-
-
-
-
-
-
-```{r}
 bim_path <- "/pi/manuel.garber-umw/human/VIGOR/tj/ibd/all_samples_qc.bim"
-bim <- fread(bim_path)
+bim <- fread(bim_path) %>%
+  mutate(chr_pos=str_c(V1, ":", V4))
 ```
 
 ```{r}
-sample_n(bim, 5)
+#get a list of the rsIDs not in the bim
+bim_missing_snps <- setdiff(snps, bim$V2)
+missing_snp_query <- ncbi_snp_query(bim_missing_snps) %>%
+  mutate(chr_pos=str_c(chromosome, ":", bp))
+missing_snp_query
+```
+
+```{r}
+#left join with the bim file to see if we can rescue any of these
+rescue_snps <- left_join(missing_snp_query, bim, on="chr_pos") %>%
+  filter(!is.na(V1))
+rescue_snps
+```
+
+```{r}
+query_snp="rs2687812"
+proxy_snps <- LDproxy(query_snp, token="342bb55e0297")
+```
+```{r}
+best_proxy <- proxy_snps %>%
+  mutate(SNP=query_snp) %>%
+  mutate(in_bim = RS_Number %in% bim$V2) %>%
+  filter(in_bim == TRUE) %>%
+  arrange(desc(R2), desc(Dprime)) %>%
+  slice(1) %>%
+  select(SNP, proxy_SNP=RS_Number, Correlated_Alleles, R2, Dprime, MAF) %>%
+  tibble()
+best_proxy
+```
+
+```{r}
+updated_table <- weights %>%
+  left_join(best_proxy, by=c("SNP")) %>%
+  mutate(effect_allele=EA_RiskAlleles,
+    tag_snp_effect_allele = case_when(
+      effect_allele == "A" ~ str_extract(Correlated_Alleles, "(?<=A=)[A-Za-z]+"),
+      effect_allele == "T" ~ str_extract(Correlated_Alleles, "(?<=T=)[A-Za-z]+"),
+      effect_allele == "G" ~ str_extract(Correlated_Alleles, "(?<=G=)[A-Za-z]+"),
+      effect_allele == "C" ~ str_extract(Correlated_Alleles, "(?<=C=)[A-Za-z]+"),
+      TRUE ~ NA_character_  # Fallback in case the effect_allele doesn't match any of the above
+    )
+  )
+updated_table
 ```
 
