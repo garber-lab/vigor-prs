@@ -58,8 +58,6 @@ calculate_class2_risk_score <- function(risk_genos) {
 }
 
 # write a function that scales the PRS based on controls
-library(dplyr)
-
 scale_prs <- function(data = analysis_df,
                       pheno_col = "vitiligo",
                       pheno_cond = 0,

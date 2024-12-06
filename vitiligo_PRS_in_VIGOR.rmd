@@ -48,25 +48,6 @@ rescue_snps <- left_join(missing_snp_query, bim, on="chr_pos") %>%
 rescue_snps
 ```
 
-```{r}
-query_snp="rs145954018"
-proxy_snps <- LDproxy(query_snp, token="342bb55e0297")
-```
-```{r}
-query_snp="rs145954018"
-proxy_snps <- LDproxy(query_snp, token="342bb55e0297")
-
-best_proxy <- proxy_snps %>%
-  mutate(SNP=query_snp) %>%
-  mutate(in_bim = RS_Number %in% bim$V2) %>%
-  filter(in_bim == TRUE) %>%
-  arrange(desc(R2), desc(Dprime)) %>%
-  slice(1) %>%
-  select(SNP, proxy_SNP=RS_Number, Correlated_Alleles, R2, Dprime, MAF) %>%
-  tibble()
-best_proxy
-```
-
 
 ```{r}
 get_best_proxy_snps <- function(query_snps, token = "342bb55e0297", bim) {
@@ -90,7 +71,7 @@ get_best_proxy_snps <- function(query_snps, token = "342bb55e0297", bim) {
       filter(in_bim == TRUE) %>%
       arrange(desc(R2), desc(Dprime)) %>%
       slice(1) %>%
-      select(SNP, proxy_SNP = RS_Number, Correlated_Alleles, R2, Dprime, MAF) %>%
+      select(SNP, proxy_SNP = RS_Number, Alleles, Correlated_Alleles, R2, Dprime, MAF) %>%
       tibble()
     
     # Add the best proxy to the list
@@ -103,17 +84,19 @@ get_best_proxy_snps <- function(query_snps, token = "342bb55e0297", bim) {
   return(best_proxies_df)
 }
 
-best_proxies = get_best_proxy_snps(query_snps=bim_missing_snps,
+best_proxies <- get_best_proxy_snps(query_snps=bim_missing_snps,
                                    token ="342bb55e0297",
                                    bim=bim)
+best_proxies
 ```
 
 
 
 ```{r}
 updated_table <- weights %>%
-  left_join(best_proxies, by=c("SNP")) %>%
-  mutate(effect_allele=EA_RiskAlleles,
+  left_join(best_proxies, by = c("SNP")) %>%
+  mutate(
+    effect_allele = EA_RiskAlleles,
     tag_snp_effect_allele = case_when(
       effect_allele == "A" ~ str_extract(Correlated_Alleles, "(?<=A=)[A-Za-z]+"),
       effect_allele == "T" ~ str_extract(Correlated_Alleles, "(?<=T=)[A-Za-z]+"),
@@ -121,9 +104,91 @@ updated_table <- weights %>%
       effect_allele == "C" ~ str_extract(Correlated_Alleles, "(?<=C=)[A-Za-z]+"),
       effect_allele == "D" ~ str_extract(Correlated_Alleles, "(?<=-=)[A-Za-z]+"),
       effect_allele == "I" ~ str_extract(Correlated_Alleles, "(?<=([A-Za-z])=)[A-Za-z]+"),
-      TRUE ~ NA_character_  # Fallback in case the effect_allele doesn't match any of the above
-    )
-  )
+      TRUE ~ NA_character_
+    ),
+    other_proxy_allele = case_when(
+      tag_snp_effect_allele %in% c("I", "D") ~ ifelse(
+        tag_snp_effect_allele == "I", "D", "I"
+      ),
+      !is.na(effect_allele) & !is.na(Alleles) ~ 
+        Alleles %>%
+        str_remove_all("\\(|\\)|/") %>% # Remove parentheses and slash
+        str_remove(tag_snp_effect_allele), # Remove the effect allele
+      TRUE ~ NA_character_
+    ),
+    # Create proxy_snp summary column with annotations
+    proxy_snp_summary = if_else(!is.na(proxy_SNP), paste(
+      "Index_SNP:", SNP,
+      "Proxy_SNP:", proxy_SNP,
+      "R2:", R2,
+      "Dprime:", Dprime,
+      "MAF:", MAF,
+      "Correlated_Alleles:", Correlated_Alleles
+    ), NA_character_)
+  ) %>%
+  # Conditionally update SNP only if proxy_SNP is not NA
+  mutate(SNP = if_else(!is.na(proxy_SNP), proxy_SNP, SNP)) %>%
+  mutate(RA_OA = if_else(!is.na(proxy_SNP), str_c(tag_snp_effect_allele, "/", other_proxy_allele), RA_OA)) %>%
+  mutate(EA_RiskAlleles = if_else(!is.na(proxy_SNP), tag_snp_effect_allele, EA_RiskAlleles))%>%
+  # Select desired columns and drop redundant ones
+  select(-proxy_SNP, -R2, -Dprime, -MAF, -Correlated_Alleles, -tag_snp_effect_allele, -other_proxy_allele, -Alleles)
+
+updated_table
+```
+
+```{r}
+process_proxy_data <- function(weights, best_proxies, effect_allele_col) {
+  
+  updated_table <- weights %>%
+    left_join(best_proxies, by = c("SNP")) %>%
+    mutate(
+      effect_allele = !!sym(effect_allele_col),
+      tag_snp_effect_allele = case_when(
+        effect_allele == "A" ~ str_extract(Correlated_Alleles, "(?<=A=)[A-Za-z]+"),
+        effect_allele == "T" ~ str_extract(Correlated_Alleles, "(?<=T=)[A-Za-z]+"),
+        effect_allele == "G" ~ str_extract(Correlated_Alleles, "(?<=G=)[A-Za-z]+"),
+        effect_allele == "C" ~ str_extract(Correlated_Alleles, "(?<=C=)[A-Za-z]+"),
+        effect_allele == "D" ~ str_extract(Correlated_Alleles, "(?<=-=)[A-Za-z]+"),
+        effect_allele == "I" ~ str_extract(Correlated_Alleles, "(?<=([A-Za-z])=)[A-Za-z]+"),
+        TRUE ~ NA_character_
+      ),
+      other_proxy_allele = case_when(
+        tag_snp_effect_allele %in% c("I", "D") ~ ifelse(
+          tag_snp_effect_allele == "I", "D", "I"
+        ),
+        !is.na(effect_allele) & !is.na(Alleles) ~ 
+          Alleles %>%
+          str_remove_all("\\(|\\)|/") %>% # Remove parentheses and slash
+          str_remove(tag_snp_effect_allele), # Remove the effect allele
+        TRUE ~ NA_character_
+      ),
+      # Create proxy_snp summary column with annotations
+      proxy_snp_summary = if_else(!is.na(proxy_SNP), paste(
+        "Index_SNP:", SNP,
+        "Proxy_SNP:", proxy_SNP,
+        "R2:", R2,
+        "Dprime:", Dprime,
+        "MAF:", MAF,
+        "Correlated_Alleles:", Correlated_Alleles
+      ), NA_character_),
+    ) %>%
+    # Conditionally update SNP only if proxy_SNP is not NA
+    mutate(SNP = if_else(!is.na(proxy_SNP), proxy_SNP, SNP)) %>%
+    mutate(RA_OA = if_else(!is.na(proxy_SNP), str_c(tag_snp_effect_allele, "/", other_proxy_allele), RA_OA)) %>%
+    mutate(!!effect_allele_col := if_else(!is.na(proxy_SNP), tag_snp_effect_allele, !!sym(effect_allele_col))) %>%
+    # Select desired columns and drop redundant ones
+    select(-proxy_SNP, -R2, -Dprime, -MAF,
+           -Correlated_Alleles,
+           -tag_snp_effect_allele, -other_proxy_allele, -Alleles)
+
+  return(updated_table)
+}
+
+updated_table <- process_proxy_data(
+  weights, 
+  best_proxies, 
+  "EA_RiskAlleles"
+)
 updated_table
 ```
 
