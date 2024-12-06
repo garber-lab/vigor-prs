@@ -11,7 +11,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 library(here, lib.loc="/home/genevieve.roberts-umw/R/x86_64-conda-linux-gnu-library/4.2")
-library(dbplyr, lib.loc = "/share/pkg/conda/r/4.2.2/lib/R/library")
 library(tidyverse, lib.loc = "/share/pkg/conda/r/4.2.2/lib/R/library")
 library(data.table)
 
@@ -50,10 +49,13 @@ rescue_snps
 ```
 
 ```{r}
-query_snp="rs2687812"
+query_snp="rs145954018"
 proxy_snps <- LDproxy(query_snp, token="342bb55e0297")
 ```
 ```{r}
+query_snp="rs145954018"
+proxy_snps <- LDproxy(query_snp, token="342bb55e0297")
+
 best_proxy <- proxy_snps %>%
   mutate(SNP=query_snp) %>%
   mutate(in_bim = RS_Number %in% bim$V2) %>%
@@ -65,15 +67,60 @@ best_proxy <- proxy_snps %>%
 best_proxy
 ```
 
+
+```{r}
+get_best_proxy_snps <- function(query_snps, token = "342bb55e0297", bim) {
+  # Ensure query_snp is a list if it's not
+  if (length(query_snps) == 1) {
+    query_snps <- list(query_snps)
+  }
+  
+  # Create an empty list to store the best proxy results for each query SNP
+  best_proxies <- list()
+  
+  # Loop through each query SNP
+  for (query_snp in query_snps) {
+    # Get proxy SNPs using LDproxy function
+    proxy_snps <- LDproxy(query_snp, token = token)
+    
+    # Find the best proxy SNP
+    best_proxy <- proxy_snps %>%
+      mutate(SNP = query_snp) %>%
+      mutate(in_bim = RS_Number %in% bim$V2) %>%
+      filter(in_bim == TRUE) %>%
+      arrange(desc(R2), desc(Dprime)) %>%
+      slice(1) %>%
+      select(SNP, proxy_SNP = RS_Number, Correlated_Alleles, R2, Dprime, MAF) %>%
+      tibble()
+    
+    # Add the best proxy to the list
+    best_proxies[[query_snp]] <- best_proxy
+  }
+  
+  # Combine all results into a single dataframe
+  best_proxies_df <- bind_rows(best_proxies)
+  
+  return(best_proxies_df)
+}
+
+best_proxies = get_best_proxy_snps(query_snps=bim_missing_snps,
+                                   token ="342bb55e0297",
+                                   bim=bim)
+```
+
+
+
 ```{r}
 updated_table <- weights %>%
-  left_join(best_proxy, by=c("SNP")) %>%
+  left_join(best_proxies, by=c("SNP")) %>%
   mutate(effect_allele=EA_RiskAlleles,
     tag_snp_effect_allele = case_when(
       effect_allele == "A" ~ str_extract(Correlated_Alleles, "(?<=A=)[A-Za-z]+"),
       effect_allele == "T" ~ str_extract(Correlated_Alleles, "(?<=T=)[A-Za-z]+"),
       effect_allele == "G" ~ str_extract(Correlated_Alleles, "(?<=G=)[A-Za-z]+"),
       effect_allele == "C" ~ str_extract(Correlated_Alleles, "(?<=C=)[A-Za-z]+"),
+      effect_allele == "D" ~ str_extract(Correlated_Alleles, "(?<=-=)[A-Za-z]+"),
+      effect_allele == "I" ~ str_extract(Correlated_Alleles, "(?<=([A-Za-z])=)[A-Za-z]+"),
       TRUE ~ NA_character_  # Fallback in case the effect_allele doesn't match any of the above
     )
   )
