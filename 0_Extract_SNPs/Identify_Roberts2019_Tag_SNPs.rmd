@@ -1,5 +1,5 @@
 ---
-title: "Compute Vitiligo PRS in VIGOR Cohort"
+title: "Identify Tag SNPs for Missing SNPs"
 author: "Gen Roberts"
 date: "`r Sys.Date()`"
 output: pdf_document
@@ -175,5 +175,20 @@ updated_table <- process_proxy_data(
   "EA_RiskAlleles"
 )
 updated_table
+```
+
+```{r}
+#write out the new table
+write.table(updated_table,
+          str_c(here(), "/Vitiligo_Risk_Score_weights_Roberts2019_TagSNPs_Added.tsv"),
+          sep="\t",
+          row.names = FALSE,
+          quote = FALSE)
+
+write.table(select(updated_table, "SNP"),
+          str_c(here(), "/PLINK_extract_SNPs.tsv"),
+          sep="\t",
+          row.names = FALSE,
+          quote=FALSE)
 ```
 
