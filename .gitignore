@@ -1,3 +1,7 @@
+# Indiv genotypes
+data/
+
+
 # History files
 .Rhistory
 .Rapp.history
