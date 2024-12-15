@@ -2,27 +2,38 @@
 title: "Identify Tag SNPs for Missing SNPs"
 author: "Gen Roberts"
 date: "`r Sys.Date()`"
-output: pdf_document
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    toc: yes
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
-library(here, lib.loc="/home/genevieve.roberts-umw/R/x86_64-conda-linux-gnu-library/4.2")
+```{r, include=FALSE}
+library(rstudioapi)
+current_file <- rstudioapi::getActiveDocumentContext()$path
+here = dirname(current_file)
 library(tidyverse, lib.loc = "/share/pkg/conda/r/4.2.2/lib/R/library")
 library(data.table)
-
 
 #install.packages('rsnps', repos = c('https://ropensci.r-universe.dev', 'https://cloud.r-project.org'))
 library(rsnps)
 library(LDlinkR)
+
+#to write the PLINK command at the end
+library(glue)
+library(fs)
 ```
 
+## Read in Initial Weights File & PLINK .bim File
 
 ```{r}
-weights_path <- str_c(here(), "/Vitiligo_Risk_Score_Weights_Roberts2019.csv")
+weights_path <- str_c(here, "/Vitiligo_Risk_Score_Weights_Roberts2019.csv")
 weights <- fread(weights_path)
 snps <- weights$SNP
 
@@ -30,6 +41,9 @@ bim_path <- "/pi/manuel.garber-umw/human/VIGOR/tj/ibd/all_samples_qc.bim"
 bim <- fread(bim_path)
 ```
 
+## Attempt to identify synonyms for SNPs missing from the .bim file
+This uses `rsnps::missing_snp_query` to see if we can pull a synonym rsID from
+the same position as any missing SNP in the .bim file
 
 ```{r}
 update_weights_with_rescued_snps <- function(weights, bim) {
@@ -75,6 +89,9 @@ updated_weights
 ```
 
 
+## Get LD Proxy SNPs for Missing SNPs
+This step uses `LDlinkR` to identify LD tags for SNPs that are missing from the
+PLINK .bim file for the VIGOR participants
 
 ```{r}
 
@@ -120,6 +137,8 @@ best_proxies <- get_best_proxy_snps(query_snps=bim_missing_snps,
 best_proxies
 ```
 
+This part ensures that, for each proxy SNP, we identify the proxy SNP allele correlated with
+the original SNP's risk allele.
 
 ```{r}
 process_proxy_data <- function(weights, best_proxies, effect_allele_col) {
@@ -177,18 +196,49 @@ updated_table <- process_proxy_data(
 updated_table
 ```
 
+This writes out the updated file that we can use to extract the SNPs that we
+need from PLINK.
 ```{r}
 #write out the new table
 write.table(updated_table,
-          str_c(here(), "/Vitiligo_Risk_Score_weights_Roberts2019_TagSNPs_Added.tsv"),
+          str_c(here, "/Vitiligo_Risk_Score_weights_Roberts2019_TagSNPs_Added.tsv"),
           sep="\t",
           row.names = FALSE,
           quote = FALSE)
 
 write.table(select(updated_table, "SNP"),
-          str_c(here(), "/PLINK_extract_SNPs.tsv"),
+          str_c(here, "/PLINK_extract_SNPs.tsv"),
           sep="\t",
           row.names = FALSE,
           quote=FALSE)
+```
+
+## Write PLINK Command to Extract SNPs
+```{r}
+
+bfile_name = str_remove(bim_path, ".bim")
+extract_file = str_c(here, "/PLINK_extract_SNPs.tsv")
+output_prefix = "Roberts19_Risk_Score_SNPs_with_Tags"
+output_bash_path = str_c(here, "/Extract_and_Recode_PRS_SNPs_with_Plink.sh")
+
+bash_script <- c(
+  "#!/bin/bash",
+  "",
+  "# Run PLINK command",
+  "plink \\",
+  paste0("  --bfile \"", bfile_name, "\" \\"),
+  paste0("  --extract \"", extract_file, "\" \\"),
+  "  --recode A \\",
+  paste0("  --out \"", output_prefix, "\"")
+)
+
+# Ensure the output directory exists
+writeLines(bash_script, con = output_bash_path)
+
+# Write the Bash script using writeLines()
+writeLines(bash_script, output_bash_path)
+
+# Make the Bash script executable
+Sys.chmod(output_bash_path, mode = "755")
 ```
 
