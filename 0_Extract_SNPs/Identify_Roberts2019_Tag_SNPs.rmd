@@ -18,6 +18,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(rstudioapi)
 current_file <- rstudioapi::getActiveDocumentContext()$path
 here = dirname(current_file)
+repo_dir <- normalizePath(file.path(dirname(current_file), ".."))
+credentials_path <- paste0(repo_dir, "/.credentials.r")
 library(tidyverse, lib.loc = "/share/pkg/conda/r/4.2.2/lib/R/library")
 library(data.table)
 
@@ -28,6 +30,8 @@ library(LDlinkR)
 #to write the PLINK command at the end
 library(glue)
 library(fs)
+
+source(credentials_path)
 ```
 
 ## Read in Initial Weights File & PLINK .bim File
@@ -97,7 +101,7 @@ PLINK .bim file for the VIGOR participants
 
 bim_missing_snps <- setdiff(updated_weights$SNP, bim$V2)
 
-get_best_proxy_snps <- function(query_snps, token = "342bb55e0297", bim) {
+get_best_proxy_snps <- function(query_snps, token = ld_linkr_token, bim) {
   # Ensure query_snp is a list if it's not
   if (length(query_snps) == 1) {
     query_snps <- list(query_snps)

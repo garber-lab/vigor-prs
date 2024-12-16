@@ -1711,7 +1711,7 @@ updated_weights &lt;- update_weights_with_rescued_snps(weights, bim)</code></pre
 are missing from the PLINK .bim file for the VIGOR participants</p>
 <pre class="r"><code>bim_missing_snps &lt;- setdiff(updated_weights$SNP, bim$V2)
 
-get_best_proxy_snps &lt;- function(query_snps, token = &quot;342bb55e0297&quot;, bim) {
+get_best_proxy_snps &lt;- function(query_snps, token = ld_linkr_token, bim) {
   # Ensure query_snp is a list if it&#39;s not
   if (length(query_snps) == 1) {
     query_snps &lt;- list(query_snps)
