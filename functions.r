@@ -1,13 +1,3 @@
-library(dplyr)
-library(tidyr)
-library(stringr)
-library(purrr)
-library(tibble)
-library(ggplot2)
-library(broom)
-library(here)
-
-
 # Function to recode specified SNPs so that risk alleles match weights
 recode_snps <- function(df, snps_to_recode) {
   df %>%
@@ -48,10 +38,10 @@ calculate_class2_risk_score <- function(risk_genos) {
   
   risk_genos %>%
     mutate(mhc_class2_only_prs = case_when(
-      RS145954018 >= 1 ~ high_risk_hap_ln_or,
-      RS114448410 == 2 ~ 2 * generic_risk_ln_or,
-      RS114448410 == 1 ~ generic_risk_ln_or,
-      RS114448410 == 0 & RS145954018 == 0 ~ 0,
+      rs62404579 >= 1 ~ high_risk_hap_ln_or,
+      rs9271597 == 2 ~ 2 * generic_risk_ln_or,
+      rs9271597 == 1 ~ generic_risk_ln_or,
+      rs9271597 == 0 & rs62404579 == 0 ~ 0,
       TRUE ~ NA_real_
     )) %>%
     select(IID, mhc_class2_only_prs)

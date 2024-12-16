@@ -1,0 +1,105 @@
+---
+title: "Compute Roberts 2019 Vitiligo PRS"
+author: "Gen Roberts"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#get the current directory and the repo directory
+library(rstudioapi)
+current_file <- rstudioapi::getActiveDocumentContext()$path
+here = dirname(current_file)
+repo_dir <- normalizePath(file.path(dirname(current_file), ".."))
+functions_path <- paste0(repo_dir, "/functions.r")
+#load necessary libraries
+library(tidyverse, lib.loc = "/share/pkg/conda/r/4.2.2/lib/R/library")
+library(data.table)
+
+source(functions_path)
+```
+
+## Read in weights and genotypes exported from PLINK
+
+```{r}
+weights_path <- str_c(repo_dir, "/0_Extract_SNPs/Vitiligo_Risk_Score_weights_Roberts2019_TagSNPs_Added.tsv")
+weights <- fread(weights_path)
+snps <- weights$SNP
+
+geno_dat_path <- str_c(repo_dir, "/data/Roberts19_Risk_Score_SNPs_with_Tags.raw")
+geno_dat <- fread(geno_dat_path) %>%
+  mutate(across(everything(), as.numeric))
+```
+
+## Recode alleles to ensure they are aligned with risk alleles from weights
+
+```{r}
+plink_dat_header <- setdiff(colnames(geno_dat),
+                            c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE"))
+
+plink_alleles <- tibble(
+  SNP = str_extract(plink_dat_header, "rs\\d+"),
+  plink_effect_allele = str_sub(plink_dat_header, -1)
+) %>%
+  left_join(select(weights, SNP, EA_RiskAlleles), by = "SNP") %>%
+  mutate(
+    recode = case_when(
+      #manually add "rs60131261" and "rs34080387" to the list of things that needs to be recoded...         #need to figure out why these are weird in the weights file, so this is a band-aid
+      SNP=="rs60131261" ~ TRUE,
+      SNP=="rs34080387" ~ TRUE,
+      plink_effect_allele == EA_RiskAlleles ~ FALSE,
+      is.na(plink_effect_allele) | is.na(EA_RiskAlleles) ~ NA,
+      TRUE ~ TRUE
+    )
+  )
+
+snps_to_recode <- plink_alleles %>%
+  filter(recode==TRUE) %>%
+  pull(SNP)
+
+plink_alleles
+```
+```{r}
+# Remove the "_" from the geno_dat dataframe now that we know what needs to be recoded
+geno_dat <- geno_dat %>%
+  rename_with(~ str_remove(., "_.*$"))
+```
+
+```{r}
+# Recode the alleles for the SNPs listed in `recode_snps`
+recoded_geno_dat <- recode_snps(df=geno_dat, snps_to_recode=snps_to_recode)
+```
+
+## Compute the PRS
+```{r}
+#calculate most of the alleles
+dat <- calculate_main_prs(risk_genos = recoded_geno_dat,
+                               weights = weights,
+                               iid_col = "IID",
+                               weights_col = "weights_risk_direction_only")
+
+mhc_class_ii_scores <- calculate_class2_risk_score(recoded_geno_dat) %>%
+  mutate(IID = as.character(IID))
+
+dat <- dat %>% left_join(mhc_class_ii_scores) %>%
+  mutate(roberts_2019_raw_prs=score+mhc_class2_only_prs) %>%
+  select(IID, roberts_2019_raw_prs)
+```
+
+## Write out the PRS
+```{r}
+write.table(dat,
+          str_c(repo_dir, "/data/Roberts19_Vitiligo_PRS_VIGOR.csv"),
+          sep=",",
+          row.names = FALSE,
+          quote=FALSE)
+```
