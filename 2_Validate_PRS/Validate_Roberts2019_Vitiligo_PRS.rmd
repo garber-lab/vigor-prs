@@ -1,0 +1,92 @@
+---
+title: "Validate Roberts 2019 Vitiligo PRS"
+author: "Gen Roberts"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#get the current directory and the repo directory
+library(rstudioapi)
+current_file <- rstudioapi::getActiveDocumentContext()$path
+here = dirname(current_file)
+repo_dir <- normalizePath(file.path(dirname(current_file), ".."))
+functions_path <- paste0(repo_dir, "/functions.r")
+credentials_path <- paste0(repo_dir, "/.credentials.r")
+#load necessary libraries
+library(dplyr)
+library(stringr)
+library(lubridate)
+library(purrr)
+library(tidyr)
+library(ggplot2)
+library(forcats)
+library(tibble)
+library(httr)
+library(jsonlite)
+library(pROC)
+
+source(functions_path)
+source(credentials_path)
+```
+
+```{r foundry_api, include=FALSE}
+### API CONSTANTS ###
+headers_post <- c('Content-Type' = 'application/json')
+
+# build request body as JSON object
+body <- list(
+  email = email,
+  password = password
+)
+
+# send a POST request with JSON content
+post_resp <- POST(
+  url = access_url,
+  add_headers(.headers = headers_post),
+  body = toJSON(body, auto_unbox = T)
+)
+
+# init. access token
+foundry_token <- content(post_resp)$token
+
+# init. headers for all future GET requests
+headers_get <- c('Authorization' = str_glue('Bearer {foundry_token}'))
+
+# init. time that data is pulled from Foundry
+# current_tz <- Sys.timezone()
+run_time_est <- with_tz(now(), "US/Eastern")
+runt_time_est_fmt <- str_c("Last updated:", run_time_est, sep = " ")
+
+# init. function to get Foundry data as DF
+get_df <- function(api_link, header=headers_get) {
+  url <- str_c(access_url_base, api_link)
+  
+  get_req <- GET(
+    url = url,
+    add_headers(.headers = header)
+  )
+  
+  resp <- get_req %>%
+    content(as = "text") %>%
+    fromJSON()
+  
+  df <- resp %>%
+    pluck("data", "data")
+  
+  return(df)
+}
+```
+
+
+
+

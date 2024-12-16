@@ -1,6 +1,8 @@
 # Indiv genotypes
 data/
 
+# Credentials
+.credentials.r
 
 # History files
 .Rhistory
