@@ -1,6 +1,10 @@
 # Indiv genotypes
 data/
 
+#LSF run output files
+*.err
+*.out
+
 # Credentials
 .credentials.r
 
