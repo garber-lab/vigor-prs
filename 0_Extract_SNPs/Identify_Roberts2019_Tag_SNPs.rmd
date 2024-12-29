@@ -46,7 +46,7 @@ bim <- fread(bim_path)
 ```
 
 ## Attempt to identify synonyms for SNPs missing from the .bim file
-This uses `rsnps::missing_snp_query` to see if we can pull a synonym rsID from
+This uses `rsnps::ncbi_snp_query` to see if we can pull a synonym rsID from
 the same position as any missing SNP in the .bim file
 
 ```{r}

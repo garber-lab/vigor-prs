@@ -15,78 +15,98 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-#get the current directory and the repo directory
 library(rstudioapi)
 current_file <- rstudioapi::getActiveDocumentContext()$path
 here = dirname(current_file)
 repo_dir <- normalizePath(file.path(dirname(current_file), ".."))
-functions_path <- paste0(repo_dir, "/functions.r")
-credentials_path <- paste0(repo_dir, "/.credentials.r")
-#load necessary libraries
-library(dplyr)
-library(stringr)
-library(lubridate)
-library(purrr)
-library(tidyr)
-library(ggplot2)
-library(forcats)
-library(tibble)
-library(httr)
-library(jsonlite)
-library(pROC)
+library(tidyverse, lib.loc = "/share/pkg/conda/r/4.2.2/lib/R/library")
+library(data.table)
 
-source(functions_path)
-source(credentials_path)
+#install.packages('rsnps', repos = c('https://ropensci.r-universe.dev', 'https://cloud.r-project.org'))
+library(rsnps)
+
+#to write the PLINK command at the end
+library(glue)
+library(fs)
 ```
 
-```{r foundry_api, include=FALSE}
-### API CONSTANTS ###
-headers_post <- c('Content-Type' = 'application/json')
+#get the MAFs for all the SNPs
 
-# build request body as JSON object
-body <- list(
-  email = email,
-  password = password
-)
+```{r}
 
-# send a POST request with JSON content
-post_resp <- POST(
-  url = access_url,
-  add_headers(.headers = headers_post),
-  body = toJSON(body, auto_unbox = T)
-)
+#read in weights
+weights_path <- str_c(repo_dir,
+                      "/0_Extract_SNPs/Vitiligo_Risk_Score_weights_Roberts2019_TagSNPs_Added.tsv")
+weights <- fread(weights_path)
+snps <- weights %>%
+  filter(str_starts(SNP, "rs")) %>%
+  pull(SNP)
+```
 
-# init. access token
-foundry_token <- content(post_resp)$token
+```{r}
+#get target snp MAFs from NCBI
+snp_ncbi_query <- ncbi_snp_query(snps) %>%
+  transmute(SNP = query,
+            chr = chromosome,
+            bp,
+            ancestral_allele, 
+            maf_population) %>%
+  unnest(cols = maf_population, names_repair = "unique") %>%
+  rename(major_allele = ref_seq,
+         minor_allele = Minor, 
+         maf = MAF) %>%
+  group_by(SNP) %>%
+  arrange(SNP, 
+          desc(study %in% c("TOPMED", "ExAC", "HapMap", "1000Genomes")), 
+          desc(maf), 
+          .by_group = TRUE) %>%
+  slice_head(n = 1) %>%
+  mutate(
+    temp_allele = major_allele,
+    major_allele = if_else(maf > 0.5, minor_allele, major_allele),
+    minor_allele = if_else(maf > 0.5, temp_allele, minor_allele),
+    maf=if_else(maf > 0.5, 1-maf, maf)
+  ) %>%
+  select(-temp_allele) %>%
+  ungroup() 
 
-# init. headers for all future GET requests
-headers_get <- c('Authorization' = str_glue('Bearer {foundry_token}'))
+snp_ncbi_query
 
-# init. time that data is pulled from Foundry
-# current_tz <- Sys.timezone()
-run_time_est <- with_tz(now(), "US/Eastern")
-runt_time_est_fmt <- str_c("Last updated:", run_time_est, sep = " ")
+```
 
-# init. function to get Foundry data as DF
-get_df <- function(api_link, header=headers_get) {
-  url <- str_c(access_url_base, api_link)
+```{r}
+geno_dat_path <- str_c(repo_dir, "/data/Roberts19_Risk_Score_SNPs_with_Tags.raw")
+geno_dat <- fread(geno_dat_path)
+
+calculate_allele_frequency <- function(geno_column) {
+  allele_counts <- table(geno_column)
+  total_alleles <- sum(allele_counts) * 2
+  alt_allele_freq <- sum(allele_counts[names(allele_counts) != "0"]) / total_alleles
   
-  get_req <- GET(
-    url = url,
-    add_headers(.headers = header)
-  )
-  
-  resp <- get_req %>%
-    content(as = "text") %>%
-    fromJSON()
-  
-  df <- resp %>%
-    pluck("data", "data")
-  
-  return(df)
+  return(alt_allele_freq)
 }
+
+plink_allele_frequencies <- geno_dat %>%
+  mutate(across(everything(), as.numeric)) %>%
+  select(starts_with("rs")) %>%
+  summarise(across(everything(), ~ calculate_allele_frequency(.),
+                   .names = "{.col}_freq")) %>%
+  t() %>%
+  as.data.frame() %>%
+  rownames_to_column("SNP") %>%
+  mutate(minor_allele = sub(".*_(.*?)_freq$", "\\1", SNP)) %>%
+  mutate(SNP = sub("_freq$", "", SNP)) %>%
+  mutate(SNP = sub("_.*", "", SNP)) %>%
+  rename(maf = V1)
+
+plink_allele_frequencies
+
 ```
 
+```{r}
+plink_allele_frequencies %>%
+  left_join(snp_ncbi_query, by=c("SNP", "minor_allele"))
+```
 
 
 
