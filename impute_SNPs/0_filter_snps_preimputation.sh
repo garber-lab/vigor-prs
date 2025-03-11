@@ -8,6 +8,7 @@
 
 # Load necessary modules
 module load plink2
+module load htslib
 
 # Ensure output directory exists
 mkdir -p /home/genevieve.roberts-umw/pre_imputation_vcf
@@ -24,7 +25,8 @@ for chr in {1..23}; do
 
   # Check if PLINK output exists before attempting gzip
   if [[ -f "/home/genevieve.roberts-umw/pre_imputation_vcf/chr${chr}_all_samples_ibd_hwe_0.001.vcf" ]]; then
-    gzip "/home/genevieve.roberts-umw/pre_imputation_vcf/chr${chr}_all_samples_ibd_hwe_0.001.vcf"
+    bgzip "/home/genevieve.roberts-umw/pre_imputation_vcf/chr${chr}_all_samples_ibd_hwe_0.001.vcf"
+    tabix "/home/genevieve.roberts-umw/pre_imputation_vcf/chr${chr}_all_samples_ibd_hwe_0.001.vcf"
   else
     echo "Error: Missing output file for chr${chr}" >&2
   fi
