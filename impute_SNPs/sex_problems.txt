@@ -1,0 +1,12 @@
+         FID            IID       PEDSEX       SNPSEX       STATUS            F
+    VIGOR_44     VIGOR_44_7            0            2      PROBLEM    -0.002567
+   VIGOR_441    VIGOR_441_6            1            0      PROBLEM       0.3726
+  VIGOR_1214   VIGOR_1214_5            1            0      PROBLEM       0.7906
+   VIGOR_133    VIGOR_133_5            1            2      PROBLEM      0.03474
+   VIGOR_133    VIGOR_133_2            2            1      PROBLEM       0.9371
+   VIGOR_568  VIGOR_568_1_v            1            2      PROBLEM    -0.001474
+   VIGOR_726    VIGOR_726_2            2            1      PROBLEM       0.9307
+   VIGOR_726  VIGOR_726_1_v            1            2      PROBLEM      0.05372
+  VIGOR_1386 VIGOR_1386_1_v            0            2      PROBLEM      0.02512
+   VIGOR_414    VIGOR_414_2            2            1      PROBLEM       0.9365
+   VIGOR_414  VIGOR_414_1_v            1            2      PROBLEM     -0.01055
