@@ -18,7 +18,7 @@ STARTING_BFILE="/pi/manuel.garber-umw/human/VIGOR/tj/ibd/run_2/all_samples_ibd"
 SNPS_TO_REMOVE="/home/genevieve.roberts-umw/vigor-prs/impute_SNPs/drop_invalid_allele_snps.txt"
 SNPS_TO_SET_REF="/home/genevieve.roberts-umw/vigor-prs/impute_SNPs/combined_ref_alleles.txt"
 MHC_SNPS_TO_SET_REF="/home/genevieve.roberts-umw/vigor-prs/impute_SNPs/MHC_set_ref_snps.txt"
-INDIVS_TO_REMOVE="/home/genevieve.roberts-umw/vigor-prs/impute_SNPs/remove_ambiguous_sex_indivs.txt"
+INDIVS_TO_REMOVE="/home/genevieve.roberts-umw/vigor-prs/impute_SNPs/sex_problems.txt"
 
 for chr in {1..23}; do
   plink2 \
