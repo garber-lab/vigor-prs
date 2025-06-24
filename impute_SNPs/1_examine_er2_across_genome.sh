@@ -7,7 +7,7 @@
 #BSUB -n 1
 
 # Set the working directory
-cd /home/genevieve.roberts-umw/imputed_genotypes/1KG
+cd /home/genevieve.roberts-umw/imputed_genotypes/HRC
 
 OUTPUT_FILE="filtered_ER2_output.gz"
 

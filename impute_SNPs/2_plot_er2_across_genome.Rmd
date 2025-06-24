@@ -1,0 +1,71 @@
+---
+title: "Plot Imputation Empirical Rsquared"
+output: html_notebook
+---
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(data.table)
+```
+
+```{r}
+plot_er2 <- function(df, ref_panel = NULL) {
+  # Step 1: Bin and summarize
+  er2_binned <- df %>%
+    mutate(
+      Mb_bin = floor(POS / 1e6) * 1e6,
+      ER2_bin = cut(ER2, breaks = seq(0, 1, by = 0.1), include.lowest = TRUE)
+    ) %>%
+    group_by(CHR, Mb_bin, ER2_bin) %>%
+    summarise(n = n(), .groups = "drop") %>%
+    group_by(CHR, Mb_bin) %>%
+    mutate(prop = n / sum(n)) %>%
+    ungroup()
+  
+  # Step 2: Dynamic title
+  plot_title <- "Empirical R² in 1Mb Genomic Bins"
+  if (!is.null(ref_panel)) {
+    plot_title <- paste0(plot_title, " (", ref_panel, ")")
+  }
+  
+  # Step 3: Plot
+  ggplot(er2_binned, aes(x = Mb_bin / 1e6, y = prop, fill = ER2_bin)) +
+    geom_col() +
+    scale_x_continuous(name = "Genomic Position (Mb)") +
+    scale_y_continuous(labels = scales::percent_format(), name = "Percent of Variants") +
+    scale_fill_viridis_d(name = "Empirical R² Bin") +
+    facet_wrap(~ CHR, scales = "free_x") +
+    labs(
+      title = plot_title,
+      caption = "ER2 binned into 0.1 intervals"
+    ) +
+    theme_bw() +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      axis.title = element_text(size = 12),
+      legend.title = element_text(size = 10)
+    )
+}
+
+```
+
+## 1000 Genomes Reference Panel
+```{r}
+er2_dat_1kg <- fread("/home/genevieve.roberts-umw/imputed_genotypes/1KG/filtered_ER2_output.gz")
+plot_er2(er2_dat_1kg, ref_panel = "1KG")
+```
+
+## HLA Reference Panel -- Chr 6 MHC Region Only
+```{r}
+er2_dat_mhc <- fread("/home/genevieve.roberts-umw/imputed_genotypes/MHC_alleles/filtered_ER2_output.gz")
+plot_er2(er2_dat_mhc, ref_panel = "HLA")
+```
+
+## HRC Reference Panel
+```{r}
+er2_dat_hrc <- fread("/home/genevieve.roberts-umw/imputed_genotypes/HRC/filtered_ER2_output.gz")
+plot_er2(er2_dat_hrc, ref_panel = "HRC")
+```
+
