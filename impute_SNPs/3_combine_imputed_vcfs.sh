@@ -109,9 +109,10 @@ for chr in {21..22}; do
         fi
     done
 
-    # Step 5: Concatenate all genotype files (same samples, different variants)
+    # Step 5: Merge all genotype files (some samples may be missing from some panels)
     MERGED_VCF="${TMP_DIR}/chr${chr}_merged_geno.vcf.gz"
-    bcftools concat -a -Oz -o "$MERGED_VCF" "${GENOTYPED_VCFS[@]}"
+    bcftools merge --force-samples --missing-to-na -Oz -o "$MERGED_VCF" "${GENOTYPED_VCFS[@]}"
+    tabix -f "$MERGED_VCF"
 
     # Step 6: Annotate merged genotypes with SOURCE tag
     FINAL_VCF="${OUTPUT_DIR}/chr${chr}.best_imputed.vcf.gz"
