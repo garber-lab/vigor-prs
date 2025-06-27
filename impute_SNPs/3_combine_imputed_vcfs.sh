@@ -65,7 +65,9 @@ for chr in {21..22}; do
     tabix -f "$CONCAT_VCF"
 
     # Step 3: Pick best-R² per site
+    BEST_UNSORTED="${TMP_DIR}/chr${chr}.best_unsorted.vcf"
     BEST_SITES="${TMP_DIR}/chr${chr}.best_sites.vcf.gz"
+
     bcftools view "$CONCAT_VCF" | \
     awk '
     BEGIN {FS="\t"; OFS="\t"}
@@ -82,8 +84,12 @@ for chr in {21..22}; do
     }
     END {
         for (k in best) print best[k]
-    }' | bcftools sort -Oz -o "$BEST_SITES"
+    }' > "$BEST_UNSORTED"
+
+    # Now compress sorted output
+    bcftools sort "$BEST_UNSORTED" -Oz -o "$BEST_SITES"
     tabix -f "$BEST_SITES"
+
 
     # Step 4: Extract genotypes from correct original panel using SOURCE filter
     GENOTYPED_VCFS=()
@@ -103,10 +109,9 @@ for chr in {21..22}; do
         fi
     done
 
-    # Step 5: Merge all genotype files
+    # Step 5: Concatenate all genotype files (same samples, different variants)
     MERGED_VCF="${TMP_DIR}/chr${chr}_merged_geno.vcf.gz"
-    bcftools merge -Oz -o "$MERGED_VCF" "${GENOTYPED_VCFS[@]}"
-    tabix -f "$MERGED_VCF"
+    bcftools concat -a -Oz -o "$MERGED_VCF" "${GENOTYPED_VCFS[@]}"
 
     # Step 6: Annotate merged genotypes with SOURCE tag
     FINAL_VCF="${OUTPUT_DIR}/chr${chr}.best_imputed.vcf.gz"
@@ -118,7 +123,7 @@ for chr in {21..22}; do
 done
 
 # Optional: merge all chromosomes
-bcftools concat -a ${OUTPUT_DIR}/chr*.best_imputed.vcf.gz -Oz -o imputed_snps_combined.vcf.gz
+bcftools merge -a ${OUTPUT_DIR}/chr*.best_imputed.vcf.gz -Oz -o imputed_snps_combined.vcf.gz
 tabix -f imputed_snps_combined.vcf.gz
 
 echo "Final output: imputed_snps_combined.vcf.gz"
