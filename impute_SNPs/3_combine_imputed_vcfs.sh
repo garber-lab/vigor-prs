@@ -77,7 +77,7 @@ for chr in {21..22}; do
         fi
     done
 
-    # Step 3: Find best-R² variant per site
+    # Step 2: Find best-R² variant per site
     BEST_R2_FILE="${TMP_DIR}/chr${chr}_best_r2.tsv"
 
     R2_SUMMARY_FILES=($(ls "${TMP_DIR}"/*_variant_r2.tsv))
@@ -104,32 +104,48 @@ for chr in {21..22}; do
     }' > "${BEST_R2_FILE}"
     sort "${BEST_R2_FILE}" -o "${BEST_R2_FILE}"
 
-    # Step 4: Extract variant list (plink2 ID format) and make filtered pgens
+    # Step 3: Extract variant list (plink2 ID format), intersect samples, and make filtered pgens
     FILTERED_PGENS=()
+    INTERSECT_FILE="${TMP_DIR}/chr${chr}_intersect_samples.txt"
+    FIRST=true
 
     for src in "${INPUT_DIRS[@]}"; do
         OUT_PREFIX="${src}_chr${chr}"
         if [[ -f "${TMP_DIR}/${OUT_PREFIX}.pgen" ]]; then
-            #only include files that have a pgen in the temp dir
-            PGEN_BASENAMES+=("${TMP_DIR}/${OUT_PREFIX}")
-
-            #make the extract variant list
             VARIANT_LIST="${TMP_DIR}/${OUT_PREFIX}_filtered_variants.txt"
             grep "${src}" "${BEST_R2_FILE}" > "$VARIANT_LIST" 
 
-            #make the filtered pgen for each imputation source
-            plink2 --pfile "${PGEN_BASENAMES[0]}" \
+            SAMPLE_FILE="${TMP_DIR}/${OUT_PREFIX}_samples.txt"
+            tail -n +2 "${TMP_DIR}/${OUT_PREFIX}.psam" | awk '{print $1, $2}' > "$SAMPLE_FILE"
+
+            if [ "$FIRST" = true ]; then
+                cp "$SAMPLE_FILE" "$INTERSECT_FILE"
+                FIRST=false
+            else
+                grep -F -f "$SAMPLE_FILE" "$INTERSECT_FILE" > "${INTERSECT_FILE}.tmp"
+                mv "${INTERSECT_FILE}.tmp" "$INTERSECT_FILE"
+            fi
+        fi
+    done
+
+    for src in "${INPUT_DIRS[@]}"; do
+        OUT_PREFIX="${src}_chr${chr}"
+        if [[ -f "${TMP_DIR}/${OUT_PREFIX}.pgen" ]]; then
+            VARIANT_LIST="${TMP_DIR}/${OUT_PREFIX}_filtered_variants.txt"
+
+            plink2 --pfile "${TMP_DIR}/${OUT_PREFIX}" \
                 --extract "$VARIANT_LIST" \
+                --keep "$INTERSECT_FILE" \
                 --make-pgen --out "${TMP_DIR}/${OUT_PREFIX}_filtered"
-            
+
             FILTERED_PGENS+=("${TMP_DIR}/${OUT_PREFIX}_filtered")
         else
             echo "Warning: missing ${TMP_DIR}/${OUT_PREFIX}.pgen"
             continue
         fi
     done
-    
-    # Step 5: Merge all filtered pgens
+
+    # Step 4: Merge all filtered pgens
     MERGE_LIST="${TMP_DIR}/chr${chr}_merge_list.txt"
     > "$MERGE_LIST"
     for f in "${FILTERED_PGENS[@]:1}"; do
