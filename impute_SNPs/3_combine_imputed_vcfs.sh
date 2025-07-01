@@ -4,6 +4,7 @@
 #BSUB -o combine_imp_pgen.out
 #BSUB -e combine_imp_pgen.err
 #BSUB -q short
+#BSUB -W 1:00
 #BSUB -n 1
 
 # Load necessary modules
@@ -104,8 +105,8 @@ for chr in {21..22}; do
     }' > "${BEST_R2_FILE}"
     sort "${BEST_R2_FILE}" -o "${BEST_R2_FILE}"
 
-    # Step 3: Extract variant list (plink2 ID format), intersect samples, and make filtered pgens
-    FILTERED_PGENS=()
+    # Step 3: Extract variant list (plink2 ID format), intersect samples, and make filtered BFILES
+    FILTERED_BFILES=()
     INTERSECT_FILE="${TMP_DIR}/chr${chr}_intersect_samples.txt"
     FIRST=true
 
@@ -136,19 +137,19 @@ for chr in {21..22}; do
             plink2 --pfile "${TMP_DIR}/${OUT_PREFIX}" \
                 --extract "$VARIANT_LIST" \
                 --keep "$INTERSECT_FILE" \
-                --make-pgen --out "${TMP_DIR}/${OUT_PREFIX}_filtered"
+                --make-bed --out "${TMP_DIR}/${OUT_PREFIX}_filtered"
 
-            FILTERED_PGENS+=("${TMP_DIR}/${OUT_PREFIX}_filtered")
+            FILTERED_BFILES+=("${TMP_DIR}/${OUT_PREFIX}_filtered")
         else
             echo "Warning: missing ${TMP_DIR}/${OUT_PREFIX}.pgen"
             continue
         fi
     done
 
-    # Step 4: Merge all filtered pgens
+    # Step 4: Merge all filtered BFILES (pgen merging is not fully developed yet, so do this with plink-1.9 .bed/.bim/.fam files)
     MERGE_LIST="${TMP_DIR}/chr${chr}_merge_list.txt"
     > "$MERGE_LIST"
-    for f in "${FILTERED_PGENS[@]:1}"; do
+    for f in "${FILTERED_BFILES[@]:1}"; do
         echo "$f" >> "$MERGE_LIST"
     done
 
@@ -157,9 +158,7 @@ for chr in {21..22}; do
 
     MERGED_PREFIX="${OUTPUT_DIR}/chr${chr}_merged"
 
-    plink2 --pfile "${FILTERED_PGENS[0]}" \
-        --pmerge-list "$MERGE_LIST" \
-        --make-pgen --out "$MERGED_PREFIX"
-
-    echo "Finished: ${MERGED_PREFIX}.pgen"
+    plink --bfile "${FILTERED_BFILES[0]}" \
+        --merge-list "$MERGE_LIST" \
+        --make-bed --out "$MERGED_PREFIX"
 done
