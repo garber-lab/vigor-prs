@@ -138,6 +138,10 @@ for chr in {21..22}; do
                 --extract "$VARIANT_LIST" \
                 --keep "$INTERSECT_FILE" \
                 --make-bed --out "${TMP_DIR}/${OUT_PREFIX}_filtered"
+            
+            plink2 --pfile "${TMP_DIR}/${OUT_PREFIX}" \
+                --extract "$VARIANT_LIST" \
+                --make-just-pvar --out "${TMP_DIR}/${OUT_PREFIX}_filtered"
 
             FILTERED_BFILES+=("${TMP_DIR}/${OUT_PREFIX}_filtered")
         else
@@ -156,9 +160,49 @@ for chr in {21..22}; do
     echo "Files to be merged for chr${chr}:"
     cat "$MERGE_LIST"
 
-    MERGED_PREFIX="${OUTPUT_DIR}/chr${chr}_merged"
+    MERGED_PREFIX="${TMP_DIR}/chr${chr}_merged"
 
     plink --bfile "${FILTERED_BFILES[0]}" \
         --merge-list "$MERGE_LIST" \
-        --make-bed --out "$MERGED_PREFIX"
+        --make-bed \
+        --out "$MERGED_PREFIX"
+    
+    plink2 --bfile "$MERGED_PREFIX" \
+        --make-just-pvar \
+        --out "$MERGED_PREFIX"
+        
+    #create list of filtered pvar files
+    FILTERED_PVAR_FILES=()
+    for f in "${FILTERED_BFILES[@]}"; do
+        FILTERED_PVAR_FILES+=("${f}.pvar")
+    done
+
+    # Combine .pvar files and include SOURCE information from best_r2 file
+    cat "${FILTERED_PVAR_FILES[@]}" | grep -v "^#" | \
+    while IFS=$'\t' read -r chrom pos id ref alt info rest; do
+        source=$(grep "^$id" "${BEST_R2_FILE}" | cut -f3)
+        if [ ! -z "$source" ]; then
+            echo -e "$chrom\t$pos\t$id\t$ref\t$alt\tR2;SOURCE=$source"
+        fi
+    done | sort -k1,1V -k2,2n | uniq > "${MERGED_PREFIX}.filtered_combined.anno"
+    
+    #Use grep/awk to left join the "${MERGED_PREFIX}.pvar" file with the "${MERGED_PREFIX}.filtered_combined.anno"
+    awk 'FNR==NR {info[$3]=$6; next} {print $0, info[$3]}' "${MERGED_PREFIX}.filtered_combined.anno" "${MERGED_PREFIX}.pvar" > "${MERGED_PREFIX}.pvar.annotated"
+
+    #Replace the lines that start with "#" in the "${MERGED_PREFIX}.pvar.annotated" file with the lines that start with "#" in the FILTERED_PVAR_FILES[0]
+    { grep '^#' "${FILTERED_PVAR_FILES[0]}"; grep -v '^#' "${MERGED_PREFIX}.pvar.annotated"; } > "${MERGED_PREFIX}.pvar.annotated.tmp" && mv "${MERGED_PREFIX}.pvar.annotated.tmp" "${MERGED_PREFIX}.pvar.annotated"
+
+    #add a INFO/SOURCE description to the header of the "${MERGED_PREFIX}.pvar.annotated" file, after all the other INFO lines
+    echo '##INFO=<ID=SOURCE,Number=1,Type=String,Description="Source of the variant (1KG, HRC, MHC_alleles)">' > $INSERT_HEADER_SOURCE
+    awk 'NR==1 {print; system("cat '"$INSERT_HEADER_SOURCE"'"); next} 1' "${MERGED_PREFIX}.pvar.annotated" > "${MERGED_PREFIX}.pvar.annotated.tmp" && mv "${MERGED_PREFIX}.pvar.annotated.tmp" "${MERGED_PREFIX}.pvar.annotated"
+    #input the bfile and output the pgen
+    plink2 --bfile "$MERGED_PREFIX" \
+        --make-pgen --out "${OUTPUT_DIR}/chr${chr}_imputed_combined"
+
+    #replace the .pvar file with the annotated one
+    mv "${MERGED_PREFIX}.pvar.annotated" "${OUTPUT_DIR}/chr${chr}_imputed_combined.pvar"
+
+    # Also output a vcf file
+    plink2 --pfile "${OUTPUT_DIR}/chr${chr}_imputed_combined" \
+        --export vcf bgz --out "${OUTPUT_DIR}/chr${chr}_imputed_combined"
 done
