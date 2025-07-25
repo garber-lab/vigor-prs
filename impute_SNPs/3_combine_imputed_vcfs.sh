@@ -206,3 +206,15 @@ for chr in {21..22}; do
     plink2 --pfile "${OUTPUT_DIR}/chr${chr}_imputed_combined" \
         --export vcf bgz --out "${OUTPUT_DIR}/chr${chr}_imputed_combined"
 done
+
+
+## Step 5: Make a lifted over version of the final vcf file
+
+# module load picard/3.1.1
+
+# java -jar $PICARDJAR LiftoverVcf \\
+#     I=input.vcf \\
+#     O=lifted_over.vcf \\
+#     CHAIN=b37tohg38.chain \\
+#     REJECT=rejected_variants.vcf \\
+#     R=reference_sequence.fasta
