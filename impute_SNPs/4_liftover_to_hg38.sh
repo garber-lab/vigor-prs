@@ -1,10 +1,10 @@
 #!/bin/bash
 #BSUB -J liftover_chr22
-#BSUB -R "rusage[mem=48000]"
+#BSUB -R "rusage[mem=96000]"
 #BSUB -o liftover_chr22.out
 #BSUB -e liftover_chr22.err
 #BSUB -q short
-#BSUB -W 0:30
+#BSUB -W 1:00
 #BSUB -n 1
 
 module load picard/3.1.1
@@ -35,7 +35,7 @@ bcftools index "$OUT_VCF_WITH_CHR"
 
 # ---- STEP 2: Run Picard LiftoverVcf ----
 echo "Running LiftoverVcf for chr${CHR}..."
-JAVA_MEM=40g
+JAVA_MEM=90g
 java -Xmx$JAVA_MEM -jar $PICARDJAR LiftoverVcf \
     I="$OUT_VCF_WITH_CHR" \
     O="$LIFTED_VCF" \
