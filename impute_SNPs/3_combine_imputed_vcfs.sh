@@ -4,7 +4,7 @@
 #BSUB -o combine_imp_pgen.out
 #BSUB -e combine_imp_pgen.err
 #BSUB -q short
-#BSUB -W 1:00
+#BSUB -W 2:00
 #BSUB -n 1
 
 # Load necessary modules
