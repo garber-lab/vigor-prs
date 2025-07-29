@@ -171,6 +171,7 @@ for chr in {21..22}; do
         --make-just-pvar \
         --out "$MERGED_PREFIX"
         
+    # Step 5: Annotate the merged pvar file with R2 and SOURCE information
     #create list of filtered pvar files
     FILTERED_PVAR_FILES=()
     for f in "${FILTERED_BFILES[@]}"; do
@@ -197,12 +198,28 @@ for chr in {21..22}; do
         }
     ' "${FILTERED_PVAR_FILES[@]}" | sort -k1,1V -k2,2n | uniq > "${MERGED_PREFIX}.filtered_combined.anno"
 
-    # Step 5: Annotate the merged pvar file with R2 and SOURCE information
     plink2 \
     --bfile "$MERGED_PREFIX" \
-    --set-vars r2_annotation.txt \
     --make-pgen \
     --out "${OUTPUT_DIR}/chr${chr}_imputed_combined"
+
+    #join the pvar file with the annotation
+    awk '
+    BEGIN { FS = OFS = "\t" }
+    NR==FNR { anno[$1] = $2; next }
+    /^#/ {
+        if ($1 == "#CHROM") {
+            print $1, $2, $3, $4, $5, "INFO"
+        } else {
+            print
+        }
+        next
+    }
+    {
+        info = ($3 in anno) ? anno[$3] : "R2=NA;SOURCE=NA"
+        print $1, $2, $3, $4, $5, info
+    }
+    ' "${MERGED_PREFIX}.filtered_combined.anno" "${MERGED_PREFIX}.pvar" > "${OUTPUT_DIR}/chr${chr}_imputed_combined.pvar"
 
     #add the header for SOURCE and R2
     pvar_file="${OUTPUT_DIR}/chr${chr}_imputed_combined.pvar"
@@ -217,5 +234,6 @@ for chr in {21..22}; do
 
     # Also output a vcf file
     plink2 --pfile "${OUTPUT_DIR}/chr${chr}_imputed_combined" \
-        --export vcf bgz --out "${OUTPUT_DIR}/chr${chr}_imputed_combined"
+        --export vcf bgz \
+        --out "${OUTPUT_DIR}/chr${chr}_imputed_combined"
 done
