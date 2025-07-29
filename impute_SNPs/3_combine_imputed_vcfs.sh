@@ -178,29 +178,42 @@ for chr in {21..22}; do
     done
 
     # Combine .pvar files and include SOURCE information from best_r2 file
-    cat "${FILTERED_PVAR_FILES[@]}" | grep -v "^#" | \
-    while IFS=$'\t' read -r chrom pos id ref alt info rest; do
-        source=$(grep "^$id" "${BEST_R2_FILE}" | cut -f3)
-        if [ ! -z "$source" ]; then
-            echo -e "$chrom\t$pos\t$id\t$ref\t$alt\tR2;SOURCE=$source"
-        fi
-    done | sort -k1,1V -k2,2n | uniq > "${MERGED_PREFIX}.filtered_combined.anno"
-    
-    #Use grep/awk to left join the "${MERGED_PREFIX}.pvar" file with the "${MERGED_PREFIX}.filtered_combined.anno"
-    awk 'FNR==NR {info[$3]=$6; next} {print $0, info[$3]}' "${MERGED_PREFIX}.filtered_combined.anno" "${MERGED_PREFIX}.pvar" > "${MERGED_PREFIX}.pvar.annotated"
+    awk -v r2_file="${BEST_R2_FILE}" '
+        BEGIN {
+            FS = OFS = "\t"
+            # Read R2 info into a map
+            while ((getline < r2_file) > 0) {
+                id = $1
+                r2 = $2
+                src = $3
+                info[id] = "R2=" r2 ";SOURCE=" src
+            }
+        }
+        !/^#/ {
+            id = $3
+            if (id in info) {
+                print $3, info[id]
+            }
+        }
+    ' "${FILTERED_PVAR_FILES[@]}" | sort -k1,1V -k2,2n | uniq > "${MERGED_PREFIX}.filtered_combined.anno"
 
-    #Replace the lines that start with "#" in the "${MERGED_PREFIX}.pvar.annotated" file with the lines that start with "#" in the FILTERED_PVAR_FILES[0]
-    { grep '^#' "${FILTERED_PVAR_FILES[0]}"; grep -v '^#' "${MERGED_PREFIX}.pvar.annotated"; } > "${MERGED_PREFIX}.pvar.annotated.tmp" && mv "${MERGED_PREFIX}.pvar.annotated.tmp" "${MERGED_PREFIX}.pvar.annotated"
+    # Step 5: Annotate the merged pvar file with R2 and SOURCE information
+    plink2 \
+    --bfile "$MERGED_PREFIX" \
+    --set-vars r2_annotation.txt \
+    --make-pgen \
+    --out "${OUTPUT_DIR}/chr${chr}_imputed_combined"
 
-    #add a INFO/SOURCE description to the header of the "${MERGED_PREFIX}.pvar.annotated" file, after all the other INFO lines
-    echo '##INFO=<ID=SOURCE,Number=1,Type=String,Description="Source of the variant (1KG, HRC, MHC_alleles)">' > $INSERT_HEADER_SOURCE
-    awk 'NR==1 {print; system("cat '"$INSERT_HEADER_SOURCE"'"); next} 1' "${MERGED_PREFIX}.pvar.annotated" > "${MERGED_PREFIX}.pvar.annotated.tmp" && mv "${MERGED_PREFIX}.pvar.annotated.tmp" "${MERGED_PREFIX}.pvar.annotated"
-    #input the bfile and output the pgen
-    plink2 --bfile "$MERGED_PREFIX" \
-        --make-pgen --out "${OUTPUT_DIR}/chr${chr}_imputed_combined"
+    #add the header for SOURCE and R2
+    pvar_file="${OUTPUT_DIR}/chr${chr}_imputed_combined.pvar"
 
-    #replace the .pvar file with the annotated one
-    mv "${MERGED_PREFIX}.pvar.annotated" "${OUTPUT_DIR}/chr${chr}_imputed_combined.pvar"
+    # Create header comment line
+    echo -e '##INFO=<ID=R2,Number=1,Type=Float,Description="Imputation INFO score from reference panel">' > tmp_header
+    echo -e '##INFO=<ID=SOURCE,Number=1,Type=String,Description="Imputation reference panel: HRC, 1KG, MHC_alleles">' >> tmp_header
+
+    # Concatenate with original pvar (preserving the main header and data)
+    cat tmp_header "$pvar_file" > tmp && mv tmp "$pvar_file"
+    rm tmp_header
 
     # Also output a vcf file
     plink2 --pfile "${OUTPUT_DIR}/chr${chr}_imputed_combined" \
