@@ -1,8 +1,8 @@
 #!/bin/bash
-#BSUB -J combine_imp_pgen
+#BSUB -J combine_imputed_vcfs
 #BSUB -R "rusage[mem=8192]"
-#BSUB -o combine_imp_pgen.out
-#BSUB -e combine_imp_pgen.err
+#BSUB -o combine_imputed_vcfs.out
+#BSUB -e combine_imputed_vcfs.err
 #BSUB -q short
 #BSUB -W 2:00
 #BSUB -n 1
@@ -233,7 +233,22 @@ for chr in {21..22}; do
     rm tmp_header
 
     # Also output a vcf file
+    FINAL_PLINK_OUT_PREFIX="${TMP_DIR}/chr${chr}_imputed_combined"
     plink2 --pfile "${OUTPUT_DIR}/chr${chr}_imputed_combined" \
         --export vcf bgz \
-        --out "${OUTPUT_DIR}/chr${chr}_imputed_combined"
+        --out "$FINAL_PLINK_OUT_PREFIX"
+
+    # Post-processing: clean REF field and add "chr" prefix to contig names
+    CLEANED_VCF="${TMP_DIR}/tmp_chr${chr}_imputed_combined_cleaned.vcf.gz"
+    FINAL_VCF="${OUTPUT_DIR}/chr${chr}_imputed_combined_hg19.vcf.gz"
+
+    echo "Filtering out symbolic REF alleles like <CN0>..."
+    bcftools view -e 'REF ~ "^<"' "${FINAL_PLINK_OUT_PREFIX}.vcf.gz" -O z -o "$CLEANED_VCF"
+    bcftools index -f "$CLEANED_VCF"
+
+    echo "Adding 'chr' prefix to contig ${chr}..."
+    bcftools annotate \
+    --rename-chrs <(echo -e "${chr}\tchr${chr}") \
+    -O z -o "$FINAL_VCF" "$CLEANED_VCF"
+    bcftools index -f "$FINAL_VCF"
 done

@@ -18,34 +18,22 @@ REFERENCE=/home/genevieve.roberts-umw/liftover_chain/hg38.fa
 IN_DIR=/home/genevieve.roberts-umw/imputed_genotypes/combined_output
 OUT_DIR=/home/genevieve.roberts-umw/imputed_genotypes/combined_output
 CHR=22
-VCF_PREFIX=chr${CHR}_imputed_combined
+VCF_PREFIX=chr${CHR}_imputed_combined_hg19
 
 # ---- FILE PATHS ----
 IN_VCF=${IN_DIR}/${VCF_PREFIX}.vcf.gz
-CLEANED_VCF=${OUT_DIR}/tmp_${VCF_PREFIX}_cleaned.vcf.gz
-VCF_WITH_CHR=${OUT_DIR}/tmp_${VCF_PREFIX}_addchr.vcf.gz
-REJECT_VCF=${OUT_DIR}/tmp_grch38_chr${CHR}_rejected.vcf.gz
-LIFTED_VCF=${OUT_DIR}/grch38_chr${CHR}.vcf.gz
+REJECT_VCF=${OUT_DIR}/chr${CHR}_liftover_rejected.vcf.gz
+LIFTED_VCF=${OUT_DIR}/chr${CHR}_imputed_combined_hg38.vcf.gz
+ID_MAP_TXT_RAW=${OUT_DIR}/chr${CHR}_id_mapping.txt
+ID_MAP_TXT=${ID_MAP_TXT_RAW}.gz
 
-# ---- STEP 1: Remove symbolic reference alleles ----
-echo "Filtering out symbolic reference alleles like <CN0> from REF field..."
-bcftools view -e 'REF ~ "^<"' "$IN_VCF" -O z -o "$CLEANED_VCF"
-bcftools index -f "$CLEANED_VCF"
-
-# ---- STEP 2: Add 'chr' prefix to contig ----
-echo "Adding 'chr' prefix to contig ${CHR}..."
-bcftools annotate \
-  --rename-chrs <(echo -e "${CHR}\tchr${CHR}") \
-  -O z -o "$VCF_WITH_CHR" "$CLEANED_VCF"
-bcftools index -f "$VCF_WITH_CHR"
-
-# ---- STEP 3: Run Picard LiftoverVcf ----
+# ---- STEP 1: Run Picard LiftoverVcf ----
 echo "Running Picard LiftoverVcf..."
 JAVA_MEM=60g
 PICARD_OPTIONS="-Xmx$JAVA_MEM"
 
 java $PICARD_OPTIONS -jar $PICARDJAR LiftoverVcf \
-  I="$VCF_WITH_CHR" \
+  I="$IN_VCF" \
   O="$LIFTED_VCF" \
   CHAIN="$CHAIN" \
   REJECT="$REJECT_VCF" \
@@ -54,7 +42,38 @@ java $PICARD_OPTIONS -jar $PICARDJAR LiftoverVcf \
   CREATE_INDEX=true \
   VALIDATION_STRINGENCY=LENIENT
 
-# Remove temporary files
-rm -f "$CLEANED_VCF" "$VCF_WITH_CHR" "$REJECT_VCF"
+rm -f "$REJECT_VCF"
 
-echo "Liftover complete."
+# ---- STEP 2: Clean header (remove ##contig lines) ----
+bcftools view -h "$LIFTED_VCF" | grep -v "^##contig=" > tmp_header.txt
+bcftools reheader -h tmp_header.txt -o "${LIFTED_VCF}.tmp" "$LIFTED_VCF"
+mv "${LIFTED_VCF}.tmp" "$LIFTED_VCF"
+rm tmp_header.txt
+
+# ---- STEP 3: Rename variant IDs based on new position ----
+echo "Renaming variant IDs based on lifted-over positions..."
+
+# Extract header
+bcftools view -h "$LIFTED_VCF" > vcf_header.tmp
+
+# Rewrite body with updated IDs and capture ID mapping
+bcftools view -H "$LIFTED_VCF" | \
+  awk -v chr="$CHR" -v mapfile="$ID_MAP_TXT_RAW" 'BEGIN{OFS="\t"} {
+    old_id = $3;
+    new_id = chr ":" $2 ":" $4 ":" $5;
+    $3 = new_id;
+    print old_id, new_id >> mapfile;
+    print $0;
+  }' > body.tmp.vcf
+
+# Combine header and modified body, compress and index
+cat vcf_header.tmp body.tmp.vcf | bgzip > "$LIFTED_VCF"
+tabix -p vcf "$LIFTED_VCF"
+
+# Clean up
+rm vcf_header.tmp body.tmp.vcf
+
+# Compress ID mapping
+gzip -f "$ID_MAP_TXT_RAW"
+
+echo "Liftover and ID renaming complete."
