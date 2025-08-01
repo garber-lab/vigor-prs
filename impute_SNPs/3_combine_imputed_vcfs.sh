@@ -22,6 +22,8 @@ mkdir -p "$TMP_DIR"
 
 INPUT_DIRS=("1KG" "HRC" "MHC_alleles")
 
+MASTER_FAM="/pi/manuel.garber-umw/human/VIGOR/tj/ibd/run_2/all_samples_ibd.fam"
+
 for chr in {21..22}; do
     echo "Processing chromosome $chr..."
 
@@ -198,8 +200,26 @@ for chr in {21..22}; do
         }
     ' "${FILTERED_PVAR_FILES[@]}" | sort -k1,1V -k2,2n | uniq > "${MERGED_PREFIX}.filtered_combined.anno"
 
+    echo "Updating sex and phenotype using master .fam file..."
+
+    MERGED_FAM="${MERGED_PREFIX}.fam"
+    UPDATED_SEX_FILE="${TMP_DIR}/chr${chr}_sex_update.txt"
+    UPDATED_PHENO_FILE="${TMP_DIR}/chr${chr}_pheno_update.txt"
+
+    # Get list of samples from merged file
+    awk '{print $1, $2}' "$MERGED_FAM" > "${TMP_DIR}/chr${chr}_samples_to_update.txt"
+
+    # Create updated sex file (FID IID SEX)
+    grep -Ff "${TMP_DIR}/chr${chr}_samples_to_update.txt" "$MASTER_FAM" | awk '{print $1, $2, $5}' > "$UPDATED_SEX_FILE"
+
+    # Create updated phenotype file (FID IID PHENO)
+    grep -Ff "${TMP_DIR}/chr${chr}_samples_to_update.txt" "$MASTER_FAM" | awk '{print $1, $2, $6}' > "$UPDATED_PHENO_FILE"
+
+    # Apply updates during pgen generation
     plink2 \
     --bfile "$MERGED_PREFIX" \
+    --update-sex "$UPDATED_SEX_FILE" \
+    --pheno "$UPDATED_PHENO_FILE" \
     --make-pgen \
     --out "${OUTPUT_DIR}/chr${chr}_imputed_combined"
 
