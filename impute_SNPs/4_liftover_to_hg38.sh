@@ -1,10 +1,10 @@
 #!/bin/bash
-#BSUB -J liftover_chr22
+#BSUB -J liftover[1-22]
 #BSUB -R "rusage[mem=68000]"
-#BSUB -o liftover_chr22.out
-#BSUB -e liftover_chr22.err
+#BSUB -o liftover_chr%I.out
+#BSUB -e liftover_chr%I.err
 #BSUB -q short
-#BSUB -W 0:10
+#BSUB -W 0:30
 #BSUB -n 1
 
 module load picard/3.1.1
@@ -17,7 +17,8 @@ REFERENCE=/home/genevieve.roberts-umw/liftover_chain/hg38.fa
 
 IN_DIR=/home/genevieve.roberts-umw/imputed_genotypes/combined_output
 OUT_DIR=/home/genevieve.roberts-umw/imputed_genotypes/combined_output
-CHR=22
+
+CHR=${LSB_JOBINDEX}
 VCF_PREFIX=chr${CHR}_imputed_combined_hg19
 
 # ---- FILE PATHS ----
@@ -28,7 +29,7 @@ ID_MAP_TXT_RAW=${OUT_DIR}/chr${CHR}_id_mapping.txt
 ID_MAP_TXT=${ID_MAP_TXT_RAW}.gz
 
 # ---- STEP 1: Run Picard LiftoverVcf ----
-echo "Running Picard LiftoverVcf..."
+echo "Running Picard LiftoverVcf for chr${CHR}..."
 JAVA_MEM=60g
 PICARD_OPTIONS="-Xmx$JAVA_MEM"
 
@@ -51,7 +52,7 @@ mv "${LIFTED_VCF}.tmp" "$LIFTED_VCF"
 rm tmp_header.txt
 
 # ---- STEP 3: Rename variant IDs based on new position ----
-echo "Renaming variant IDs based on lifted-over positions..."
+echo "Renaming variant IDs for chr${CHR}..."
 
 # Extract header
 bcftools view -h "$LIFTED_VCF" > vcf_header.tmp
@@ -76,4 +77,4 @@ rm vcf_header.tmp body.tmp.vcf
 # Compress ID mapping
 gzip -f "$ID_MAP_TXT_RAW"
 
-echo "Liftover and ID renaming complete."
+echo "Liftover and ID renaming complete for chr${CHR}."
