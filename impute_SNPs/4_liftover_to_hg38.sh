@@ -1,10 +1,10 @@
 #!/bin/bash
 #BSUB -J liftover[1-22]
-#BSUB -R "rusage[mem=68000]"
+#BSUB -R "rusage[mem=182000]"
 #BSUB -o liftover_chr%I.out
 #BSUB -e liftover_chr%I.err
 #BSUB -q short
-#BSUB -W 0:30
+#BSUB -W 1:00
 #BSUB -n 1
 
 module load picard/3.1.1
@@ -26,11 +26,10 @@ IN_VCF=${IN_DIR}/${VCF_PREFIX}.vcf.gz
 REJECT_VCF=${OUT_DIR}/chr${CHR}_liftover_rejected.vcf.gz
 LIFTED_VCF=${OUT_DIR}/chr${CHR}_imputed_combined_hg38.vcf.gz
 ID_MAP_TXT_RAW=${OUT_DIR}/chr${CHR}_id_mapping.txt
-ID_MAP_TXT=${ID_MAP_TXT_RAW}.gz
 
 # ---- STEP 1: Run Picard LiftoverVcf ----
 echo "Running Picard LiftoverVcf for chr${CHR}..."
-JAVA_MEM=60g
+JAVA_MEM=180g
 PICARD_OPTIONS="-Xmx$JAVA_MEM"
 
 java $PICARD_OPTIONS -jar $PICARDJAR LiftoverVcf \
@@ -41,7 +40,8 @@ java $PICARD_OPTIONS -jar $PICARDJAR LiftoverVcf \
   R="$REFERENCE" \
   MAX_RECORDS_IN_RAM=1000000 \
   CREATE_INDEX=true \
-  VALIDATION_STRINGENCY=LENIENT
+  VALIDATION_STRINGENCY=LENIENT \
+  RECOVER_SWAPPED_REF_ALT=true
 
 rm -f "$REJECT_VCF"
 
@@ -61,11 +61,18 @@ bcftools view -h "$LIFTED_VCF" > vcf_header.tmp
 bcftools view -H "$LIFTED_VCF" | \
   awk -v chr="$CHR" -v mapfile="$ID_MAP_TXT_RAW" 'BEGIN{OFS="\t"} {
     old_id = $3;
-    new_id = chr ":" $2 ":" $4 ":" $5;
+    if (old_id ~ /^HLA/) {
+        new_id = old_id;
+    } else {
+        new_id = chr ":" $2 ":" $4 ":" $5;
+    }
     $3 = new_id;
     print old_id, new_id >> mapfile;
     print $0;
   }' > body.tmp.vcf
+
+# Compress the ID mapping file
+gzip "$ID_MAP_TXT_RAW"
 
 # Combine header and modified body, compress and index
 cat vcf_header.tmp body.tmp.vcf | bgzip > "$LIFTED_VCF"
@@ -73,8 +80,3 @@ tabix -p vcf "$LIFTED_VCF"
 
 # Clean up
 rm vcf_header.tmp body.tmp.vcf
-
-# Compress ID mapping
-gzip -f "$ID_MAP_TXT_RAW"
-
-echo "Liftover and ID renaming complete for chr${CHR}."

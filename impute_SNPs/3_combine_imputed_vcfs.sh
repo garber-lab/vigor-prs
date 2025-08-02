@@ -1,5 +1,5 @@
 #!/bin/bash
-#BSUB -J combine_imputed_vcfs[6]
+#BSUB -J combine_imputed_vcfs[1-22]
 #BSUB -R "rusage[mem=64000]"
 #BSUB -o combine_imputed_vcfs_%I.out
 #BSUB -e combine_imputed_vcfs_%I.err
