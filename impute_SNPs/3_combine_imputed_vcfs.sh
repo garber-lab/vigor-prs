@@ -1,5 +1,5 @@
 #!/bin/bash
-#BSUB -J combine_imputed_vcfs[1-22]
+#BSUB -J combine_imputed_vcfs[6]
 #BSUB -R "rusage[mem=64000]"
 #BSUB -o combine_imputed_vcfs_%I.out
 #BSUB -e combine_imputed_vcfs_%I.err
@@ -24,8 +24,6 @@ mkdir -p "$TMP_DIR"
 INPUT_DIRS=("1KG" "HRC" "MHC_alleles")
 MASTER_FAM="/pi/manuel.garber-umw/human/VIGOR/tj/ibd/run_2/all_samples_ibd.fam"
 
-# Chromosome list, indexed by job array index
-#CHROM_LIST=({1..22} X)
 CHROM_LIST=({1..22})
 chr="${CHROM_LIST[$((LSB_JOBINDEX-1))]}"
 
@@ -34,7 +32,7 @@ echo "Processing chromosome $chr..."
 PGEN_BASENAMES=()
 R2_SUMMARY_FILES=()
 
-# Step 1: Convert VCFs to plink2 pgen format with allele renaming
+# Step 1: Convert VCFs to plink2 pgen format with conditional allele renaming
 for src in "${INPUT_DIRS[@]}"; do
     INPUT_VCF="${src}/chr${chr}.dose.vcf.gz"
     if [[ -f "$INPUT_VCF" ]]; then
@@ -51,16 +49,30 @@ for src in "${INPUT_DIRS[@]}"; do
             print old_fid, old_iid, new_fid, new_iid;
         }' > "${TMP_DIR}/${src}_chr${chr}_samples.txt"
 
-        plink2 --vcf "$INPUT_VCF" \
-        --extract-if-info "R2 >= 0.3" \
-        --set-all-var-ids '@:#:$r:$a' \
-        --new-id-max-allele-len 10 missing \
-        --update-ids "${TMP_DIR}/${src}_chr${chr}_samples.txt" \
-        --make-pgen --out "${TMP_DIR}/${OUT_PREFIX}"
+        if [[ "$src" == "MHC_alleles" && "$chr" == "6" ]]; then
+            echo "Handling MHC_alleles chr6 with HLA_ variant exception..."
 
+            HLA_VCF="${TMP_DIR}/${src}_chr${chr}_HLA_only.vcf.gz"
+            bcftools view -i 'ID ~ "^HLA_"' "$INPUT_VCF" -O z -o "$HLA_VCF"
+            bcftools index -f "$HLA_VCF"
+
+            plink2 --vcf "$HLA_VCF" \
+                --extract-if-info "R2 >= 0.3" \
+                --new-id-max-allele-len 10 missing \
+                --update-ids "${TMP_DIR}/${src}_chr${chr}_samples.txt" \
+                --make-pgen --out "${TMP_DIR}/${src}_chr${chr}"
+        else
+            plink2 --vcf "$INPUT_VCF" \
+            --extract-if-info "R2 >= 0.3" \
+            --set-all-var-ids '@:#:$r:$a' \
+            --new-id-max-allele-len 10 missing \
+            --update-ids "${TMP_DIR}/${src}_chr${chr}_samples.txt" \
+            --make-pgen --out "${TMP_DIR}/${OUT_PREFIX}"
+        fi
+            
         PGEN_BASENAMES+=("${TMP_DIR}/${OUT_PREFIX}")
 
-        awk -v src="$src" '
+                awk -v src="$src" '
         BEGIN { OFS = "\t" }
         !/^#/ {
             info = $6
@@ -83,7 +95,7 @@ done
 
 # Step 2: Find best-R² variant per site
 BEST_R2_FILE="${TMP_DIR}/chr${chr}_best_r2.tsv"
-R2_SUMMARY_FILES=($(ls "${TMP_DIR}"/*_variant_r2.tsv))
+mapfile -t R2_SUMMARY_FILES < <(find "${TMP_DIR}" -name '*_variant_r2.tsv')
 
 cat "${R2_SUMMARY_FILES[@]}" | \
 awk '
