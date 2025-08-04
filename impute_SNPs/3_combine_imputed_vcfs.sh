@@ -12,7 +12,7 @@ module load plink2/alpha6.1amd
 module load bcftools
 module load htslib
 
-cd /home/genevieve.roberts-umw/imputed_genotypes
+cd /pi/manuel.garber-umw/human/VIGOR/groberts/imputed_genotypes
 
 mkdir -p logs
 OUTPUT_DIR="./combined_output"

@@ -12,11 +12,11 @@ module load bcftools/1.16
 module load htslib
 
 # ---- PARAMETERS ----
-CHAIN=/home/genevieve.roberts-umw/liftover_chain/hg19ToHg38.over.chain
-REFERENCE=/home/genevieve.roberts-umw/liftover_chain/hg38.fa
+CHAIN=/pi/manuel.garber-umw/human/VIGOR/groberts/liftover_chain/hg19ToHg38.over.chain
+REFERENCE=/pi/manuel.garber-umw/human/VIGOR/groberts/liftover_chain/hg38.fa
 
-IN_DIR=/home/genevieve.roberts-umw/imputed_genotypes/combined_output
-OUT_DIR=/home/genevieve.roberts-umw/imputed_genotypes/combined_output
+IN_DIR=/pi/manuel.garber-umw/human/VIGOR/groberts/imputed_genotypes/combined_output
+OUT_DIR=/pi/manuel.garber-umw/human/VIGOR/groberts/imputed_genotypes/combined_output
 
 CHR=${LSB_JOBINDEX}
 VCF_PREFIX=chr${CHR}_imputed_combined_hg19
@@ -55,7 +55,7 @@ rm tmp_header.txt
 echo "Renaming variant IDs for chr${CHR}..."
 
 # Extract header
-bcftools view -h "$LIFTED_VCF" > vcf_header.tmp
+bcftools view -h "$LIFTED_VCF" > vcf_header_chr${CHR}.tmp
 
 # Rewrite body with updated IDs and capture ID mapping
 bcftools view -H "$LIFTED_VCF" | \
@@ -69,14 +69,14 @@ bcftools view -H "$LIFTED_VCF" | \
     $3 = new_id;
     print old_id, new_id >> mapfile;
     print $0;
-  }' > body.tmp.vcf
+  }' > body_chr${CHR}.tmp.vcf
 
 # Compress the ID mapping file
 gzip "$ID_MAP_TXT_RAW"
 
 # Combine header and modified body, compress and index
-cat vcf_header.tmp body.tmp.vcf | bgzip > "$LIFTED_VCF"
+cat vcf_header_chr${CHR}.tmp body_chr${CHR}.tmp.vcf | bgzip > "$LIFTED_VCF"
 tabix -p vcf "$LIFTED_VCF"
 
 # Clean up
-rm vcf_header.tmp body.tmp.vcf
+rm vcf_header_chr${CHR}.tmp body_chr${CHR}.tmp.vcf
