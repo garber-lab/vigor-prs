@@ -57,10 +57,3 @@ HG38_OUT=${OUT_DIR}/${HG38_OUT_BASE}.vcf.gz
 
 bcftools concat -a -O z $HG38_VCF_LIST -o "$HG38_OUT"
 bcftools index -f "$HG38_OUT"
-
-# ---- Step 3: Convert to PLINK2 (PGEN) ----
-echo "Converting hg19 to PLINK format..."
-plink2 --vcf "$HG19_OUT" --make-pgen --out ${OUT_DIR}/${HG19_OUT_BASE}
-
-echo "Converting hg38 to PLINK format..."
-plink2 --vcf "$HG38_OUT" --make-pgen --out ${OUT_DIR}/${HG38_OUT_BASE}
