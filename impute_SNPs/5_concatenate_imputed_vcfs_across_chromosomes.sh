@@ -1,6 +1,6 @@
 #!/bin/bash
 #BSUB -J concat_impute
-#BSUB -R "rusage[mem=182000]"
+#BSUB -R "rusage[mem=5000]"
 #BSUB -o concat_impute.out
 #BSUB -e concat_impute.err
 #BSUB -n 1
